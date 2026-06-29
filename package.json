@@ -1,6 +1,6 @@
 {
   "name": "gomustack",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "type": "module",
   "description": "GomuStack — LLM-first knowledge base. Docs, Datatable, MCP server, S3-compatible file store.",
   "author": "Zobite",
@@ -13,7 +13,10 @@
   "bugs": {
     "url": "https://github.com/Zobite/gomustack/issues"
   },
-  "workspaces": ["src/server", "src/web"],
+  "workspaces": [
+    "src/server",
+    "src/web"
+  ],
   "scripts": {
     "dev:server": "NODE_ENV=development bun --watch src/server/src/index.ts",
     "dev:web": "cd src/web && bun run dev",
