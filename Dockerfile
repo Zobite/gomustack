@@ -83,6 +83,7 @@ COPY --from=builder /app/src/web/dist ./public
 COPY --from=builder /app/package.json ./
 COPY --from=builder /app/bun.lock ./
 COPY --from=builder /app/src/server/package.json ./src/server/
+COPY --from=builder /app/src/web/package.json ./src/web/
 RUN bun install --production --frozen-lockfile
 
 # Create data directory

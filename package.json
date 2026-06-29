@@ -30,13 +30,11 @@
     "format": "bunx biome format ./src/web --write",
     "biome:check": "bunx biome check --write ./src/web",
     "typecheck:server": "cd src/server && bunx tsc --noEmit",
-    "typecheck:web": "cd src/web && bunx tsc --noEmit",
-    "prepare": "husky"
+    "typecheck:web": "cd src/web && bunx tsc --noEmit"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
     "concurrently": "^9.2.1",
-    "husky": "^9.1.7",
     "typescript": "~5.8.3"
   }
 }
