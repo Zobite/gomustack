@@ -1,0 +1,32 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# GomuStack — Production Docker Compose
+#
+# Usage:
+#   docker compose up -d          # Start
+#   docker compose logs -f        # View logs
+#   docker compose down           # Stop
+#   docker compose up -d --build  # Rebuild & start
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  gomustack:
+    image: zobite/gomustack:latest
+    build: .
+    container_name: gomustack
+    ports:
+      - "5610:5610"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=5610
+      - DATA_DIR=/data
+    volumes:
+      - gomustack-data:/data
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  gomustack-data:

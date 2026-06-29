@@ -1,0 +1,54 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# GomuStack — Dev Docker Compose
+#
+# Usage:
+#   docker compose -f docker-compose.dev.yml up
+#   ./scripts/dev.sh
+#
+# Features:
+#   - Source code mounted → hot reload (bun --watch)
+#   - Web dev server with HMR on port 5611
+#   - Server on port 5610
+#   - Data persisted in named volume
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  server:
+    image: oven/bun:1
+    working_dir: /app
+    entrypoint: ["sh", "-c", "bun install && bun run dev:server"]
+    ports:
+      - "5610:5610"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=5610
+      - DATA_DIR=/data
+    volumes:
+      - .:/app
+      - node-modules:/app/node_modules
+      - server-modules:/app/src/server/node_modules
+      - web-modules:/app/src/web/node_modules
+      - gomustack-dev-data:/data
+
+  web:
+    image: oven/bun:1
+    working_dir: /app
+    entrypoint: ["sh", "-c", "bun install && bun run dev:web -- --host 0.0.0.0"]
+    ports:
+      - "5611:5611"
+    environment:
+      - API_HOST=server
+      - API_PORT=5610
+    volumes:
+      - .:/app
+      - node-modules:/app/node_modules
+      - server-modules:/app/src/server/node_modules
+      - web-modules:/app/src/web/node_modules
+    depends_on:
+      - server
+
+volumes:
+  node-modules:
+  server-modules:
+  web-modules:
+  gomustack-dev-data:

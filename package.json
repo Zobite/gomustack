@@ -1,0 +1,39 @@
+{
+  "name": "gomustack",
+  "version": "0.0.1",
+  "type": "module",
+  "description": "GomuStack — LLM-first knowledge base. Docs, Datatable, MCP server, S3-compatible file store.",
+  "author": "Zobite",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Zobite/gomustack.git"
+  },
+  "homepage": "https://github.com/Zobite/gomustack#readme",
+  "bugs": {
+    "url": "https://github.com/Zobite/gomustack/issues"
+  },
+  "workspaces": ["src/server", "src/web"],
+  "scripts": {
+    "dev:server": "NODE_ENV=development bun --watch src/server/src/index.ts",
+    "dev:web": "cd src/web && bun run dev",
+    "dev": "concurrently --names \"server,web\" --prefix-colors \"cyan,magenta\" --kill-others-on-fail \"bun run dev:server\" \"bun run dev:web\"",
+    "start": "bun src/server/src/index.ts",
+    "build:server": "cd src/server && bun run build",
+    "build:web": "cd src/web && bun run build",
+    "build": "bun run build:web && bun run build:server",
+    "lint": "bunx biome lint ./src/web",
+    "lint:fix": "bunx biome lint ./src/web --write",
+    "format": "bunx biome format ./src/web --write",
+    "biome:check": "bunx biome check --write ./src/web",
+    "typecheck:server": "cd src/server && bunx tsc --noEmit",
+    "typecheck:web": "cd src/web && bunx tsc --noEmit",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "1.9.4",
+    "concurrently": "^9.2.1",
+    "husky": "^9.1.7",
+    "typescript": "~5.8.3"
+  }
+}

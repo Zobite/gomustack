@@ -1,0 +1,19 @@
+name: Post-Merge Actions
+
+on:
+  pull_request:
+    types: [ closed ]
+    branches: [ main, master ]
+
+jobs:
+  post-merge:
+    name: Post-Merge Cleanup
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Log Merge Details
+        run: |
+          echo "PR #${{ github.event.pull_request.number }} by @${{ github.event.pull_request.user.login }} was merged!"
+          echo "Title: ${{ github.event.pull_request.title }}"
+          echo "Base Branch: ${{ github.event.pull_request.base.ref }}"

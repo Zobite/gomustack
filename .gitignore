@@ -1,0 +1,41 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+.npmrc
+node_modules
+/dist
+/public
+src/*/dist
+dist-ssr
+dist-electron
+out
+*.local
+.env
+.env.*
+releases
+scripts
+docker/data
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+# Added by code-review-graph
+.code-review-graph/
+.agents
+
+# CodeGraph
+.codegraph/
+

@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  ci:
+    name: Build, Lint & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install Dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Run Biome Lint & Format Check
+        run: bunx biome check ./src/web
+
+      - name: Run Typecheck (Server)
+        run: bun run typecheck:server
+
+      - name: Run Typecheck (Web)
+        run: bun run typecheck:web
+
+      - name: Run Server Integration Tests
+        run: |
+          # Run database migrations first
+          cd src/server && bun run db:migrate && cd ../..
+          
+          # Start server in background
+          bun run start &
+          
+          # Wait for API server to become ready (port 5610)
+          echo "Waiting for server to start..."
+          curl --retry 10 --retry-delay 2 --retry-connrefused http://127.0.0.1:5610/api/health
+          
+          # Run integration tests
+          cd src/server && bun test
