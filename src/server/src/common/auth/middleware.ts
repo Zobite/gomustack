@@ -53,7 +53,7 @@ async function resolveApiKey(rawKey: string): Promise<AuthContext | null> {
 /** Resolve auth from MCP server key (msk_xxx) — validates serverId match */
 async function resolveMcpServerKey(
   rawKey: string,
-  serverId: string,
+  serverId?: string,
 ): Promise<AuthContext | null> {
   if (!rawKey.startsWith("msk_")) return null;
 
@@ -68,8 +68,8 @@ async function resolveMcpServerKey(
 
   if (!server) return null;
 
-  // Key must belong to the requested server
-  if (server.id !== serverId) return null;
+  // Key must belong to the requested server (when serverId is provided)
+  if (serverId && server.id !== serverId) return null;
 
   // Server must be active
   if (!server.isActive) return null;
@@ -87,6 +87,9 @@ export async function resolveAuth(req: FastifyRequest): Promise<AuthContext | nu
   // 1. Check X-API-Key header first
   const xApiKey = req.headers["x-api-key"];
   if (xApiKey && typeof xApiKey === "string") {
+    if (xApiKey.startsWith("msk_")) {
+      return resolveMcpServerKey(xApiKey);
+    }
     return resolveApiKey(xApiKey);
   }
 
@@ -102,7 +105,12 @@ export async function resolveAuth(req: FastifyRequest): Promise<AuthContext | nu
     return resolveApiKey(token);
   }
 
-  // 4. Otherwise → JWT
+  // 4. If token starts with msk_ → MCP server key (internal calls from tool executor)
+  if (token.startsWith("msk_")) {
+    return resolveMcpServerKey(token);
+  }
+
+  // 5. Otherwise → JWT
   try {
     const payload = await verifyToken(token);
     if (payload.type !== "access") return null;
