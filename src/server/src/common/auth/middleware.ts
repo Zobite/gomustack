@@ -23,10 +23,8 @@ async function hashApiKey(raw: string): Promise<string> {
   return hasher.digest("hex");
 }
 
-/** Resolve auth from API key (ltk_xxx) */
+/** Resolve auth from API key */
 async function resolveApiKey(rawKey: string): Promise<AuthContext | null> {
-  if (!rawKey.startsWith("ltk_")) return null;
-
   const keyHash = await hashApiKey(rawKey);
   const db = getDb();
 
