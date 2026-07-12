@@ -15,7 +15,6 @@ export type CreateApiKeyBody = z.infer<typeof createApiKeyBodySchema>;
 export interface ApiKeyResponse {
   id: string;
   name: string;
-  prefix: string;
   userId: string;
   permissions: string[];
   lastUsedAt: number | null;

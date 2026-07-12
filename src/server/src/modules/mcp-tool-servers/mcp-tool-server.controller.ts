@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
-import { requireAuth } from "../../common/auth/middleware.js";
+import { requireAuth, requireAdmin, extractAuthToken } from "../../common/auth/middleware.js";
 import { executeMcpTool } from "./utils/executor.js";
 import {
   createMcpServerBodySchema,
@@ -76,7 +76,6 @@ export function registerMcpServerRoutes(app: FastifyInstance) {
       if (!existing) return reply.code(400).send({ error: "not_found", message: "MCP server not found" });
 
       const data = req.body as UpdateMcpServerBody;
-      // Builtin server: cannot change name or type
       if (isBuiltinServer(id) && data.name !== undefined) {
         return reply.code(403).send({ error: "forbidden", message: "Cannot rename built-in server" });
       }
@@ -100,8 +99,6 @@ export function registerMcpServerRoutes(app: FastifyInstance) {
     return reply.send({ id, deleted: true });
   });
 
-  // ── Coding Agent SSE Endpoint ────────────────────────────────────────────
-
   const codingAgentBodySchema = z.object({
     providerId: z.string().min(1),
     model: z.string().min(1),
@@ -118,7 +115,6 @@ export function registerMcpServerRoutes(app: FastifyInstance) {
     })).default([]),
   });
 
-  // POST /coding-agent — SSE stream of coding agent events
   r.post(
     "/coding-agent",
     {
@@ -127,12 +123,8 @@ export function registerMcpServerRoutes(app: FastifyInstance) {
     },
     async (req, reply) => {
       const input = req.body as z.infer<typeof codingAgentBodySchema>;
+      const authToken = extractAuthToken(req);
 
-      // Extract auth token for test execution
-      const authHeader = req.headers.authorization;
-      const authToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : "";
-
-      // Set SSE headers
       reply.raw.writeHead(200, {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
@@ -159,43 +151,28 @@ export function registerMcpServerRoutes(app: FastifyInstance) {
     },
   );
 
-  // ── MCP Server API Key Management ─────────────────────────────────────────
-
-  // POST /:id/regenerate-key — regenerate API key for MCP server
-  r.post("/:id/regenerate-key", { preHandler: [requireAuth] }, async (req, reply) => {
+  r.post("/:id/regenerate-key", { preHandler: [requireAdmin] }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const existing = await getMcpServerById(id);
     if (!existing) return reply.code(400).send({ error: "not_found", message: "MCP server not found" });
-
-    if (isBuiltinServer(id)) {
-      return reply.code(403).send({ error: "forbidden", message: "Cannot manage API key for built-in server" });
-    }
 
     const result = await regenerateMcpServerApiKey(id);
     return reply.send(result);
   });
 
-  // DELETE /:id/api-key — revoke API key for MCP server
-  r.delete("/:id/api-key", { preHandler: [requireAuth] }, async (req, reply) => {
+  r.delete("/:id/api-key", { preHandler: [requireAdmin] }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const existing = await getMcpServerById(id);
     if (!existing) return reply.code(400).send({ error: "not_found", message: "MCP server not found" });
-
-    if (isBuiltinServer(id)) {
-      return reply.code(403).send({ error: "forbidden", message: "Cannot manage API key for built-in server" });
-    }
 
     await revokeMcpServerApiKey(id);
     return reply.send({ id, revoked: true });
   });
 }
 
-// ── Tool Routes (nested under /:id/tools) ───────────────────────────────────
-
 export function registerMcpToolRoutes(app: FastifyInstance) {
   const r = app.withTypeProvider<ZodTypeProvider>();
 
-  // GET / — list tools for a server
   r.get(
     "/",
     { preHandler: [requireAuth], schema: { querystring: listMcpToolsQuerySchema } },
@@ -210,15 +187,15 @@ export function registerMcpToolRoutes(app: FastifyInstance) {
     },
   );
 
-  // GET /:toolId — get tool by ID
   r.get("/:toolId", { preHandler: [requireAuth] }, async (req, reply) => {
-    const { toolId } = req.params as { id: string; toolId: string };
+    const { id, toolId } = req.params as { id: string; toolId: string };
     const tool = await getMcpToolById(toolId);
-    if (!tool) return reply.code(400).send({ error: "not_found", message: "Tool not found" });
+    if (!tool || tool.serverId !== id) {
+      return reply.code(400).send({ error: "not_found", message: "Tool not found" });
+    }
     return reply.send(tool);
   });
 
-  // POST / — create tool
   r.post(
     "/",
     { preHandler: [requireAuth], schema: { body: createMcpToolBodySchema } },
@@ -227,7 +204,6 @@ export function registerMcpToolRoutes(app: FastifyInstance) {
       const server = await getMcpServerById(id);
       if (!server) return reply.code(400).send({ error: "not_found", message: "MCP server not found" });
 
-      // Only allow creating tools in custom servers
       if (isBuiltinServer(id)) {
         return reply.code(403).send({ error: "forbidden", message: "Cannot add tools to built-in server" });
       }
@@ -242,16 +218,16 @@ export function registerMcpToolRoutes(app: FastifyInstance) {
     },
   );
 
-  // PATCH /:toolId — update tool
   r.patch(
     "/:toolId",
     { preHandler: [requireAuth], schema: { body: updateMcpToolBodySchema } },
     async (req, reply) => {
       const { id, toolId } = req.params as { id: string; toolId: string };
       const tool = await getMcpToolById(toolId);
-      if (!tool) return reply.code(400).send({ error: "not_found", message: "Tool not found" });
+      if (!tool || tool.serverId !== id) {
+        return reply.code(400).send({ error: "not_found", message: "Tool not found" });
+      }
 
-      // Builtin server tools: only allow toggling isActive
       if (isBuiltinServer(id)) {
         const data = req.body as UpdateMcpToolBody;
         const nonToggleKeys = Object.keys(data).filter((k) => k !== "isActive");
@@ -270,7 +246,6 @@ export function registerMcpToolRoutes(app: FastifyInstance) {
     },
   );
 
-  // DELETE /:toolId — delete tool
   r.delete("/:toolId", { preHandler: [requireAuth] }, async (req, reply) => {
     const { id, toolId } = req.params as { id: string; toolId: string };
     if (isBuiltinServer(id)) {
@@ -278,39 +253,38 @@ export function registerMcpToolRoutes(app: FastifyInstance) {
     }
 
     const tool = await getMcpToolById(toolId);
-    if (!tool) return reply.code(400).send({ error: "not_found", message: "Tool not found" });
+    if (!tool || tool.serverId !== id) {
+      return reply.code(400).send({ error: "not_found", message: "Tool not found" });
+    }
 
     await deleteMcpTool(toolId);
     return reply.send({ id: toolId, deleted: true });
   });
 
-  // GET /:toolId/logs — list execution logs for a tool
   r.get("/:toolId/logs", { preHandler: [requireAuth] }, async (req, reply) => {
-    const { toolId } = req.params as { id: string; toolId: string };
+    const { id, toolId } = req.params as { id: string; toolId: string };
     const { page, limit } = req.query as { page?: string; limit?: string };
     const tool = await getMcpToolById(toolId);
-    if (!tool) return reply.code(400).send({ error: "not_found", message: "Tool not found" });
+    if (!tool || tool.serverId !== id) {
+      return reply.code(400).send({ error: "not_found", message: "Tool not found" });
+    }
     const result = await listMcpToolLogs(toolId, Number(page ?? 1), Number(limit ?? 50));
     return reply.send(result);
   });
 
-  // POST /:toolId/test — test execute tool (uses JS executor)
   r.post(
     "/:toolId/test",
     { preHandler: [requireAuth], schema: { body: testMcpToolBodySchema } },
     async (req, reply) => {
       const { id: serverId, toolId } = req.params as { id: string; toolId: string };
       const tool = await getMcpToolById(toolId);
-      if (!tool) return reply.code(400).send({ error: "not_found", message: "Tool not found" });
+      if (!tool || tool.serverId !== serverId) {
+        return reply.code(400).send({ error: "not_found", message: "Tool not found" });
+      }
 
       const body = req.body as { params?: Record<string, unknown>; source?: "prod" | "draft" };
-
-      // Pick code based on source: "prod" = official code, "draft" = draftCode (fallback to code)
       const codeToTest = body.source === "prod" ? tool.code : (tool.draftCode ?? tool.code);
-
-      // Extract auth token for context SDK
-      const authHeader = req.headers.authorization;
-      const authToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : "";
+      const authToken = extractAuthToken(req);
 
       const result = await executeMcpTool(
         tool.id,
@@ -323,7 +297,6 @@ export function registerMcpToolRoutes(app: FastifyInstance) {
         },
       );
 
-      // Save execution log (fire-and-forget, don't block response)
       createMcpToolLog({
         toolId: tool.id,
         serverId,
@@ -339,5 +312,4 @@ export function registerMcpToolRoutes(app: FastifyInstance) {
       return reply.send(result);
     },
   );
-
 }

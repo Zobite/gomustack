@@ -6,23 +6,24 @@ import { App } from "antd";
 export function ConfigTab({
   mcpEndpoint,
   serverName,
-  apiKeyPrefix,
+  hasApiKey,
   revealedApiKey,
+  canManageKey,
   onRegenerateKey,
   onRevokeKey,
 }: {
   mcpEndpoint: string;
   serverName: string;
-  apiKeyPrefix: string | null;
+  hasApiKey: boolean;
   revealedApiKey: string | null;
+  canManageKey: boolean;
   onRegenerateKey: () => void;
   onRevokeKey: () => void;
 }) {
   const { message } = App.useApp();
 
-  // Use revealed key if available, otherwise show masked prefix
-  const authValue = revealedApiKey || (apiKeyPrefix ? `${apiKeyPrefix}${"•".repeat(28)}` : "<NO_KEY>");
-  const hasKey = !!apiKeyPrefix || !!revealedApiKey;
+  const authValue = revealedApiKey || (hasApiKey ? "•".repeat(40) : "<NO_KEY>");
+  const hasKey = hasApiKey || !!revealedApiKey;
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -31,7 +32,7 @@ export function ConfigTab({
 
   const claudeCodeCmd = revealedApiKey
     ? `claude mcp add --transport http ${serverName} ${mcpEndpoint} --header "Authorization: Bearer ${revealedApiKey}"`
-    : `claude mcp add --transport http ${serverName} ${mcpEndpoint} --header "Authorization: Bearer ${apiKeyPrefix ? `${apiKeyPrefix}...` : "<YOUR_MCP_KEY>"}"`;
+    : `claude mcp add --transport http ${serverName} ${mcpEndpoint} --header "Authorization: Bearer <YOUR_MCP_KEY>"`;
 
   const antigravityConfig = JSON.stringify(
     {
@@ -39,7 +40,7 @@ export function ConfigTab({
         [serverName]: {
           serverUrl: `${mcpEndpoint}`,
           headers: {
-            Authorization: `Bearer ${revealedApiKey || (apiKeyPrefix ? `${apiKeyPrefix}...` : "<YOUR_MCP_KEY>")}`,
+            Authorization: `Bearer ${revealedApiKey || "<YOUR_MCP_KEY>"}`,
           },
         },
       },
@@ -94,34 +95,40 @@ export function ConfigTab({
             </div>
           ) : (
             <div className="px-3 py-2 rounded-md bg-[#1e1e1e]/50 border border-hairline border-dashed font-mono text-[12px] text-muted-soft text-center">
-              No API key — click Regenerate to create one
+              {canManageKey ? "No API key — click Generate Key to create one" : "No API key"}
             </div>
           )}
 
-          {revealedApiKey && (
+          {revealedApiKey ? (
             <div className="flex items-center gap-1.5 px-3 py-2 rounded-md bg-[#1f8a65]/5 border border-[#1f8a65]/20">
-              <span className="text-[11px] text-[#1f8a65] font-medium">⚠ Copy this key now — it won't be shown again.</span>
+              <span className="text-[11px] text-[#1f8a65] font-medium">Copy this key now — it won't be shown again.</span>
+            </div>
+          ) : hasKey ? (
+            <div className="text-[12px] text-muted">
+              Full key is only shown once after generate. Regenerate to get a new copyable key (old key stops working).
+            </div>
+          ) : null}
+
+          {canManageKey && (
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                onClick={onRegenerateKey}
+                className="flex items-center gap-1.5 h-[30px] px-3 rounded-md bg-transparent border border-hairline text-muted font-mono text-[11px] uppercase tracking-wider hover:border-hairline-strong hover:text-ink cursor-pointer transition-colors"
+              >
+                <RefreshCw size={12} />
+                {hasKey ? "Regenerate" : "Generate Key"}
+              </button>
+              {hasKey && (
+                <button
+                  onClick={onRevokeKey}
+                  className="flex items-center gap-1.5 h-[30px] px-3 rounded-md bg-transparent border border-[#cf2d56]/20 text-[#cf2d56] font-mono text-[11px] uppercase tracking-wider hover:bg-[#cf2d56]/5 hover:border-[#cf2d56]/40 cursor-pointer transition-colors"
+                >
+                  <Trash2 size={12} />
+                  Revoke
+                </button>
+              )}
             </div>
           )}
-
-          <div className="flex items-center gap-2 pt-1">
-            <button
-              onClick={onRegenerateKey}
-              className="flex items-center gap-1.5 h-[30px] px-3 rounded-md bg-transparent border border-hairline text-muted font-mono text-[11px] uppercase tracking-wider hover:border-hairline-strong hover:text-ink cursor-pointer transition-colors"
-            >
-              <RefreshCw size={12} />
-              {hasKey ? "Regenerate" : "Generate Key"}
-            </button>
-            {hasKey && (
-              <button
-                onClick={onRevokeKey}
-                className="flex items-center gap-1.5 h-[30px] px-3 rounded-md bg-transparent border border-[#cf2d56]/20 text-[#cf2d56] font-mono text-[11px] uppercase tracking-wider hover:bg-[#cf2d56]/5 hover:border-[#cf2d56]/40 cursor-pointer transition-colors"
-              >
-                <Trash2 size={12} />
-                Revoke
-              </button>
-            )}
-          </div>
         </div>
       </div>
 

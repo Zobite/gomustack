@@ -11,7 +11,7 @@ import Fastify from "fastify";
 import type { FastifyError, FastifyInstance } from "fastify";
 import { type ZodTypeProvider, serializerCompiler, validatorCompiler } from "fastify-type-provider-zod";
 import { z } from "zod";
-import { requireAuth, requireMcpAuth } from "./common/auth/middleware.js";
+import { extractAuthToken, requireMcpAuth } from "./common/auth/middleware.js";
 import { createMcpServer } from "./common/mcp/server.js";
 // ── Static module imports (required for bun build bundling) ─────────────────
 import apiKeysModule, { MODULE_PREFIX as API_KEYS_PREFIX } from "./modules/api-keys/api-key.module.js";
@@ -32,11 +32,21 @@ import storageModule, { MODULE_PREFIX as STORAGE_PREFIX } from "./modules/storag
 import systemModule, { MODULE_PREFIX as SYSTEM_PREFIX } from "./modules/system/system.module.js";
 import usersModule, { MODULE_PREFIX as USERS_PREFIX } from "./modules/users/user.module.js";
 
+type McpServerInstance = McpServer | ReturnType<typeof createMcpServer>;
+
 // Session tracker for MCP (Streamable HTTP)
-const mcpStreamableSessions = new Map<string, { transport: StreamableHTTPServerTransport; mcpServer: McpServer | ReturnType<typeof createMcpServer> }>();
+const mcpStreamableSessions = new Map<string, {
+  transport: StreamableHTTPServerTransport;
+  mcpServer: McpServerInstance;
+  serverId: string;
+}>();
 
 // Session tracker for MCP (Legacy SSE)
-const mcpSseSessions = new Map<string, { transport: SSEServerTransport; mcpServer: McpServer | ReturnType<typeof createMcpServer> }>();
+const mcpSseSessions = new Map<string, {
+  transport: SSEServerTransport;
+  mcpServer: McpServerInstance;
+  serverId: string;
+}>();
 
 /**
  * Create an MCP server for a custom MCP tool server.
@@ -44,7 +54,7 @@ const mcpSseSessions = new Map<string, { transport: SSEServerTransport; mcpServe
  */
 async function createCustomMcpServer(serverId: string, authToken: string): Promise<McpServer | null> {
   const serverRecord = await getMcpServerById(serverId);
-  if (!serverRecord || serverRecord.type === "builtin") return null;
+  if (!serverRecord || serverRecord.type === "builtin" || !serverRecord.isActive) return null;
 
   const server = new McpServer({
     name: serverRecord.name,
@@ -134,6 +144,32 @@ async function createCustomMcpServer(serverId: string, authToken: string): Promi
   }
 
   return server;
+}
+
+async function resolveMcpServerInstance(
+  serverId: string,
+  authToken: string,
+): Promise<
+  | { ok: true; mcpServer: McpServerInstance }
+  | { ok: false; status: number; error: string; message: string }
+> {
+  const serverRecord = await getMcpServerById(serverId);
+  if (!serverRecord) {
+    return { ok: false, status: 404, error: "not_found", message: "MCP server not found" };
+  }
+  if (!serverRecord.isActive) {
+    return { ok: false, status: 403, error: "forbidden", message: "MCP server is inactive" };
+  }
+
+  if (serverRecord.type === "custom") {
+    const customServer = await createCustomMcpServer(serverId, authToken);
+    if (!customServer) {
+      return { ok: false, status: 404, error: "not_found", message: "MCP server not found" };
+    }
+    return { ok: true, mcpServer: customServer };
+  }
+
+  return { ok: true, mcpServer: createMcpServer() };
 }
 
 // Resolve __dirname robustly — handles the case where the install directory
@@ -295,6 +331,7 @@ export async function createApp() {
 
   // POST /api/mcp/:serverId — handle JSON-RPC messages (initialize, tool calls, etc.)
   app.post("/api/mcp/:serverId", { preHandler: [requireMcpAuth] }, async (req, reply) => {
+    const { serverId } = req.params as { serverId: string };
     const sessionId = req.headers["mcp-session-id"] as string | undefined;
 
     // ── Existing session → reuse transport ──────────────────────────────────
@@ -303,27 +340,21 @@ export async function createApp() {
       if (!session) {
         return reply.code(404).send({ error: "not_found", message: "Session not found" });
       }
+      if (session.serverId !== serverId) {
+        return reply.code(403).send({ error: "forbidden", message: "Session does not belong to this server" });
+      }
       reply.hijack();
       await session.transport.handleRequest(req.raw, reply.raw, req.body);
       return reply;
     }
 
     // ── No session header → this should be an "initialize" request ──────────
-    const { serverId } = req.params as { serverId: string };
-
-    // Extract auth token for custom server context SDK
-    // Use the raw bearer token (works for both msk_ and ltk_/JWT)
-    const authHeader = req.headers.authorization;
-    const authToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : "";
-
-    // Check if this is a custom server
-    let mcpServer: McpServer | ReturnType<typeof createMcpServer>;
-    const customServer = await createCustomMcpServer(serverId, authToken);
-    if (customServer) {
-      mcpServer = customServer;
-    } else {
-      mcpServer = createMcpServer();
+    const authToken = extractAuthToken(req);
+    const resolved = await resolveMcpServerInstance(serverId, authToken);
+    if (!resolved.ok) {
+      return reply.code(resolved.status).send({ error: resolved.error, message: resolved.message });
     }
+    const mcpServer = resolved.mcpServer;
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => crypto.randomUUID(),
     });
@@ -341,7 +372,7 @@ export async function createApp() {
 
     // After handleRequest, the transport has a sessionId (generated during initialize)
     if (transport.sessionId) {
-      mcpStreamableSessions.set(transport.sessionId, { transport, mcpServer });
+      mcpStreamableSessions.set(transport.sessionId, { transport, mcpServer, serverId });
     }
 
     return reply;
@@ -349,6 +380,7 @@ export async function createApp() {
 
   // GET /api/mcp/:serverId — SSE stream for server-to-client notifications
   app.get("/api/mcp/:serverId", { preHandler: [requireMcpAuth] }, async (req, reply) => {
+    const { serverId } = req.params as { serverId: string };
     const sessionId = req.headers["mcp-session-id"] as string | undefined;
     if (!sessionId) {
       return reply.code(400).send({ error: "bad_request", message: "Missing mcp-session-id header" });
@@ -357,6 +389,9 @@ export async function createApp() {
     const session = mcpStreamableSessions.get(sessionId);
     if (!session) {
       return reply.code(404).send({ error: "not_found", message: "Session not found" });
+    }
+    if (session.serverId !== serverId) {
+      return reply.code(403).send({ error: "forbidden", message: "Session does not belong to this server" });
     }
 
     // Close existing standalone SSE stream before opening a new one to prevent
@@ -375,6 +410,7 @@ export async function createApp() {
 
   // DELETE /api/mcp/:serverId — close a session explicitly
   app.delete("/api/mcp/:serverId", { preHandler: [requireMcpAuth] }, async (req, reply) => {
+    const { serverId } = req.params as { serverId: string };
     const sessionId = req.headers["mcp-session-id"] as string | undefined;
     if (!sessionId) {
       return reply.code(400).send({ error: "bad_request", message: "Missing mcp-session-id header" });
@@ -382,6 +418,9 @@ export async function createApp() {
 
     const session = mcpStreamableSessions.get(sessionId);
     if (session) {
+      if (session.serverId !== serverId) {
+        return reply.code(403).send({ error: "forbidden", message: "Session does not belong to this server" });
+      }
       await session.transport.close();
       await session.mcpServer.close();
       mcpStreamableSessions.delete(sessionId);
@@ -397,18 +436,13 @@ export async function createApp() {
   // GET /api/mcp/:serverId/sse — establish SSE stream
   app.get("/api/mcp/:serverId/sse", { preHandler: [requireMcpAuth] }, async (req, reply) => {
     const { serverId } = req.params as { serverId: string };
-    // Use the raw bearer token (works for both msk_ and ltk_/JWT)
-    const authHeader = req.headers.authorization;
-    const authToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : "";
+    const authToken = extractAuthToken(req);
 
-    // Create MCP server (builtin or custom)
-    let mcpServer: McpServer | ReturnType<typeof createMcpServer>;
-    const customServer = await createCustomMcpServer(serverId, authToken);
-    if (customServer) {
-      mcpServer = customServer;
-    } else {
-      mcpServer = createMcpServer();
+    const resolved = await resolveMcpServerInstance(serverId, authToken);
+    if (!resolved.ok) {
+      return reply.code(resolved.status).send({ error: resolved.error, message: resolved.message });
     }
+    const mcpServer = resolved.mcpServer;
 
     // Hijack response for raw SSE streaming
     reply.hijack();
@@ -416,7 +450,7 @@ export async function createApp() {
     const transport = new SSEServerTransport(`/api/mcp/${serverId}/messages`, reply.raw);
 
     // Store session and clean up on close
-    mcpSseSessions.set(transport.sessionId, { transport, mcpServer });
+    mcpSseSessions.set(transport.sessionId, { transport, mcpServer, serverId });
     reply.raw.on("close", () => {
       mcpSseSessions.delete(transport.sessionId);
     });
@@ -427,6 +461,7 @@ export async function createApp() {
 
   // POST /api/mcp/:serverId/messages — receive JSON-RPC messages for SSE sessions
   app.post("/api/mcp/:serverId/messages", { preHandler: [requireMcpAuth] }, async (req, reply) => {
+    const { serverId } = req.params as { serverId: string };
     const sessionId = (req.query as Record<string, string>).sessionId;
     if (!sessionId) {
       return reply.code(400).send({ error: "bad_request", message: "Missing sessionId query parameter" });
@@ -435,6 +470,9 @@ export async function createApp() {
     const session = mcpSseSessions.get(sessionId);
     if (!session) {
       return reply.code(404).send({ error: "not_found", message: "SSE session not found" });
+    }
+    if (session.serverId !== serverId) {
+      return reply.code(403).send({ error: "forbidden", message: "Session does not belong to this server" });
     }
 
     reply.hijack();
@@ -472,14 +510,36 @@ export async function createApp() {
     });
 
     app.get("/ui/*", async (req, reply) => {
-      // Strip /ui prefix to resolve file path
-      const relPath = req.url.replace(/^\/ui/, "") || "/";
-      const filePath = join(webDist, relPath);
+      const urlPath = req.url.split("?")[0].replace(/^\/ui\/?/, "");
+      let decoded = "";
+      try {
+        decoded = decodeURIComponent(urlPath);
+      } catch {
+        decoded = "";
+      }
 
-      if (relPath !== "/" && existsSync(filePath)) {
-        const file = Bun.file(filePath);
-        const buf = Buffer.from(await file.arrayBuffer());
-        return reply.header("Content-Type", file.type).send(buf);
+      const hasTraversal =
+        decoded.includes("\0") ||
+        decoded.split(/[/\\]/).some((part) => part === "..");
+
+      if (!hasTraversal && decoded && decoded !== "/") {
+        const candidate = resolve(webDist, decoded);
+        const rootResolved = resolve(webDist);
+        if (candidate === rootResolved || candidate.startsWith(`${rootResolved}/`)) {
+          try {
+            if (existsSync(candidate)) {
+              const realFile = realpathSync(candidate);
+              const realRoot = realpathSync(webDist);
+              if (realFile === realRoot || realFile.startsWith(`${realRoot}/`)) {
+                const file = Bun.file(realFile);
+                const buf = Buffer.from(await file.arrayBuffer());
+                return reply.header("Content-Type", file.type).send(buf);
+              }
+            }
+          } catch {
+            // fall through to SPA
+          }
+        }
       }
 
       // SPA fallback — serve index.html for all unmatched routes

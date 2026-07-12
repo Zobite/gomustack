@@ -16,7 +16,7 @@ export default function ApiKeyInput() {
       <div className="flex-1 flex items-center relative sm:max-w-[320px] sm:ml-auto">
         <input
           type="password"
-          placeholder="Paste raw ltk_... key to inject"
+          placeholder="Paste API key to inject"
           value={apiKey}
           onChange={(e) => setApiKey(e.target.value)}
           className="w-full h-[32px] pl-3 pr-8 bg-surface-card border border-hairline rounded-md text-[12px] text-ink font-mono placeholder:text-muted-soft focus:outline-none focus:border-hairline-strong transition-colors"

@@ -5,9 +5,9 @@ import { apiKeys } from "../../common/db/schema.js";
 import { genId } from "../../common/utils.js";
 import type { CreateApiKeyBody, ApiKeyResponse, CreateApiKeyResponse } from "./common/schema.js";
 
-/** Generate an API key — gsk_ prefix + 32 chars */
+/** Generate an API key — 40 random chars, no type prefix */
 function genApiKey(): string {
-  return `gsk_${nanoid(32)}`;
+  return nanoid(40);
 }
 
 /** Hash an API key with SHA-256 (hex) */
@@ -17,12 +17,11 @@ async function hashKey(raw: string): Promise<string> {
   return hasher.digest("hex");
 }
 
-/** Map DB record → safe API response (no key hash) */
+/** Map DB record → safe API response (no key hash / prefix) */
 function toResponse(record: typeof apiKeys.$inferSelect): ApiKeyResponse {
   return {
     id: record.id,
     name: record.name,
-    prefix: record.prefix,
     userId: record.userId,
     permissions: JSON.parse(record.permissions) as string[],
     lastUsedAt: record.lastUsedAt,
@@ -58,7 +57,7 @@ export async function createApiKey(
   const db = getDb();
   const rawKey = genApiKey();
   const keyHash = await hashKey(rawKey);
-  const prefix = rawKey.slice(0, 8); // "ltk_xxxx"
+  const prefix = rawKey.slice(0, 8);
   const now = Date.now();
 
   const record = {

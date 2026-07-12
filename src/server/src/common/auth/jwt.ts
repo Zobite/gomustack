@@ -19,6 +19,11 @@ const REFRESH_TTL = "7d";
 
 let _cached: string | null = null;
 
+/** Clear in-memory JWT secret cache (for tests with isolated DATA_DIR). */
+export function resetJwtSecretCache(): void {
+  _cached = null;
+}
+
 /** Get the JWT secret string. Reads from DB, caches in memory. */
 export function getJwtSecret(): string {
   if (_cached) return _cached;

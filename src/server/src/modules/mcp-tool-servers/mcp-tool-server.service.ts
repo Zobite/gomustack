@@ -52,7 +52,8 @@ export async function listMcpServers() {
   });
 
   return {
-    items: sorted.map(({ apiKeyHash: _, ...s }) => {
+    items: sorted.map((server) => {
+      const { apiKeyHash, apiKeyPrefix: _, ...s } = server;
       let extendsBuiltin: string[] = [];
       try {
         extendsBuiltin = JSON.parse(s.extendsBuiltin || "[]");
@@ -60,6 +61,7 @@ export async function listMcpServers() {
       return {
         ...s,
         extendsBuiltin,
+        hasApiKey: !!apiKeyHash,
         toolCount: countMap.get(s.id) ?? 0,
       };
     }),
@@ -88,10 +90,11 @@ export async function getMcpServerById(id: string) {
     extendsBuiltin = JSON.parse(server.extendsBuiltin || "[]");
   } catch {}
 
-  const { apiKeyHash: _, ...safeServer } = server;
+  const { apiKeyHash, apiKeyPrefix: _, ...safeServer } = server;
   return {
     ...safeServer,
     extendsBuiltin,
+    hasApiKey: !!apiKeyHash,
     toolCount: countResult?.count ?? 0,
   };
 }
@@ -102,9 +105,8 @@ export async function createMcpServer(data: CreateMcpServerBody & { extendsBuilt
   const ts = now();
 
   // Auto-generate MCP server API key
-  const rawKey = `msk_${nanoid(32)}`;
+  const rawKey = nanoid(40);
   const keyHash = await hashKey(rawKey);
-  const keyPrefix = rawKey.slice(0, 8); // "msk_xxxx"
 
   await db.insert(mcpToolServers).values({
     id,
@@ -114,7 +116,7 @@ export async function createMcpServer(data: CreateMcpServerBody & { extendsBuilt
     isActive: 1,
     extendsBuiltin: JSON.stringify(data.extendsBuiltin ?? []),
     apiKeyHash: keyHash,
-    apiKeyPrefix: keyPrefix,
+    apiKeyPrefix: null,
     createdAt: ts,
     updatedAt: ts,
   });
@@ -143,7 +145,8 @@ export async function updateMcpServer(id: string, data: UpdateMcpServerBody & { 
 
 export async function deleteMcpServer(id: string) {
   const db = getDb();
-  // CASCADE will handle tools deletion
+  await db.delete(mcpToolLogs).where(eq(mcpToolLogs.serverId, id));
+  await db.delete(mcpTools).where(eq(mcpTools.serverId, id));
   await db.delete(mcpToolServers).where(eq(mcpToolServers.id, id));
   return true;
 }
@@ -328,16 +331,15 @@ export async function listMcpToolLogs(toolId: string, page = 1, limit = 50) {
 /** Regenerate the API key for an MCP server. Returns the raw key (shown once). */
 export async function regenerateMcpServerApiKey(serverId: string) {
   const db = getDb();
-  const rawKey = `msk_${nanoid(32)}`;
+  const rawKey = nanoid(40);
   const keyHash = await hashKey(rawKey);
-  const keyPrefix = rawKey.slice(0, 8);
 
   await db
     .update(mcpToolServers)
-    .set({ apiKeyHash: keyHash, apiKeyPrefix: keyPrefix, updatedAt: now() })
+    .set({ apiKeyHash: keyHash, apiKeyPrefix: null, updatedAt: now() })
     .where(eq(mcpToolServers.id, serverId));
 
-  return { apiKey: rawKey, apiKeyPrefix: keyPrefix };
+  return { apiKey: rawKey, hasApiKey: true as const };
 }
 
 /** Revoke (delete) the API key for an MCP server. */

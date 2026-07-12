@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, unlinkSync, readdirSync, rmdirSync, statSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { join, dirname, resolve } from "node:path";
 import { eq, and, like, sql, desc, asc } from "drizzle-orm";
 import { getDb } from "../../common/db/client.js";
 import { buckets, objects, storageAccessKeys } from "../../common/db/schema.js";
@@ -29,8 +29,25 @@ function bucketDir(bucketName: string): string {
   return join(getStoragePath(), bucketName);
 }
 
+function sanitizeObjectKey(key: string): string {
+  if (!key || key.includes("\0")) {
+    throw Object.assign(new Error("Invalid object key"), { statusCode: 400, error: "invalid_key" });
+  }
+  const normalized = key.replace(/\\/g, "/");
+  if (normalized.startsWith("/") || normalized.split("/").includes("..")) {
+    throw Object.assign(new Error("Invalid object key"), { statusCode: 400, error: "invalid_key" });
+  }
+  return normalized;
+}
+
 function objectPath(bucketName: string, key: string): string {
-  return join(bucketDir(bucketName), key);
+  const safeKey = sanitizeObjectKey(key);
+  const base = resolve(bucketDir(bucketName));
+  const full = resolve(base, safeKey);
+  if (full !== base && !full.startsWith(`${base}/`)) {
+    throw Object.assign(new Error("Invalid object key"), { statusCode: 400, error: "invalid_key" });
+  }
+  return full;
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────────

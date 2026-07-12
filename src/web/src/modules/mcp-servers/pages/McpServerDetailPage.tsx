@@ -1,6 +1,7 @@
 import { Form, Input, Modal, Spin } from "antd";
 import { ArrowLeft, Edit3, Plug, Shield, Terminal, Trash2, Wrench } from "lucide-react";
 import { useState } from "react";
+import { useAuthStore } from "src/common/stores/auth.store";
 import { API_BASE } from "src/lib/client";
 import { ConfigTab } from "../components/ConfigTab";
 import { ToolsTab } from "../components/ToolsTab";
@@ -13,6 +14,7 @@ import { useServerDetail } from "../hooks/useServerDetail";
 export default function McpServerDetailPage() {
   const { id, server, tools, loading, isBuiltin, revealedApiKey, handleToggleTool, handleCreateTool, handleEditServer, handleToggleSystemTool, handleDeleteServer, handleDeleteTool, handleRegenerateKey, handleRevokeKey, navigate } =
     useServerDetail();
+  const isAdmin = useAuthStore((s) => s.user?.role === "admin");
 
   const [activeTab, setActiveTab] = useState<"tools" | "config">("tools");
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -152,8 +154,9 @@ export default function McpServerDetailPage() {
           <ConfigTab
             mcpEndpoint={mcpEndpoint}
             serverName={server.name}
-            apiKeyPrefix={server.apiKeyPrefix}
+            hasApiKey={server.hasApiKey}
             revealedApiKey={revealedApiKey}
+            canManageKey={isAdmin}
             onRegenerateKey={handleRegenerateKey}
             onRevokeKey={handleRevokeKey}
           />

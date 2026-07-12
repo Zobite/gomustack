@@ -44,8 +44,8 @@ export class McpToolServersResource {
   }
 
   /** Regenerate API key for a server — returns raw key (shown once) */
-  async regenerateKey(id: string): Promise<{ apiKey: string; apiKeyPrefix: string }> {
-    return this.http.post<{ apiKey: string; apiKeyPrefix: string }>(`/api/mcp-tool-servers/${id}/regenerate-key`, {});
+  async regenerateKey(id: string): Promise<{ apiKey: string; hasApiKey: boolean }> {
+    return this.http.post<{ apiKey: string; hasApiKey: boolean }>(`/api/mcp-tool-servers/${id}/regenerate-key`, {});
   }
 
   /** Revoke (delete) the API key for a server */

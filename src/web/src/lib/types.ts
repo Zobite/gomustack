@@ -76,7 +76,6 @@ export interface ChangePasswordInput {
 export interface ApiKeyItem {
   id: string;
   name: string;
-  prefix: string;
   userId: string;
   permissions: string[];
   lastUsedAt: number | null;
@@ -369,7 +368,7 @@ export interface McpToolServerItem {
   type: "builtin" | "custom";
   isActive: number;
   extendsBuiltin: string[];
-  apiKeyPrefix: string | null;
+  hasApiKey: boolean;
   apiKey?: string; // raw key — only present immediately after create/regenerate
   createdAt: number;
   updatedAt: number;

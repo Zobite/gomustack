@@ -41,7 +41,7 @@ If you believe you have discovered a security or privacy vulnerability in GomuSt
 When deploying GomuStack:
 
 - **Change default credentials** immediately after installation
-- Use **API keys** (`ltk_*`) instead of JWT tokens for agent access
+- Use **API keys** instead of JWT tokens for agent access
 - Bind to `127.0.0.1` (default) — only expose via reverse proxy with TLS
 - Rotate API keys periodically
 - Keep GomuStack updated to the latest version

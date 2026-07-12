@@ -68,9 +68,9 @@ export default function ApiKeysPage() {
             <p className="text-[13px] text-muted mt-2 m-0 leading-relaxed max-w-[520px]">
               Manage programmatic access to the platform. Authenticate via{" "}
               <code className="font-mono text-[12px] bg-canvas-soft text-ink px-1.5 py-0.5 rounded-sm border border-hairline-soft">
-                Authorization: Bearer ltk_xxx
+                Authorization: Bearer &lt;API_KEY&gt;
               </code>{" "}
-              or <code className="font-mono text-[12px] bg-canvas-soft text-ink px-1.5 py-0.5 rounded-sm border border-hairline-soft">X-API-Key: ltk_xxx</code>
+              or <code className="font-mono text-[12px] bg-canvas-soft text-ink px-1.5 py-0.5 rounded-sm border border-hairline-soft">X-API-Key: &lt;API_KEY&gt;</code>
             </p>
           </div>
           <button
@@ -105,9 +105,8 @@ export default function ApiKeysPage() {
           /* ── Key List ─────────────────────────────────── */
           <div className="flex flex-col gap-3">
             {/* Table-like header */}
-            <div className="grid grid-cols-[1fr_160px_80px_100px_100px_100px_40px] gap-4 px-5 py-2">
+            <div className="grid grid-cols-[1fr_80px_100px_100px_100px_40px] gap-4 px-5 py-2">
               <span className="font-mono text-[10px] text-muted-soft uppercase tracking-wider font-semibold">Identifier</span>
-              <span className="font-mono text-[10px] text-muted-soft uppercase tracking-wider font-semibold">Key Prefix</span>
               <span className="font-mono text-[10px] text-muted-soft uppercase tracking-wider font-semibold">Status</span>
               <span className="font-mono text-[10px] text-muted-soft uppercase tracking-wider font-semibold">Last Used</span>
               <span className="font-mono text-[10px] text-muted-soft uppercase tracking-wider font-semibold">Expires</span>
@@ -118,7 +117,7 @@ export default function ApiKeysPage() {
             {keys.map((key, idx) => (
               <div
                 key={key.id}
-                className="grid grid-cols-[1fr_160px_80px_100px_100px_100px_40px] gap-4 items-center px-5 py-3.5 border border-hairline rounded-md bg-surface-card transition-colors duration-150 hover:border-hairline-strong group opacity-0 animate-[fadeInUp_0.35s_cubic-bezier(0.16,1,0.3,1)_forwards]"
+                className="grid grid-cols-[1fr_80px_100px_100px_100px_40px] gap-4 items-center px-5 py-3.5 border border-hairline rounded-md bg-surface-card transition-colors duration-150 hover:border-hairline-strong group opacity-0 animate-[fadeInUp_0.35s_cubic-bezier(0.16,1,0.3,1)_forwards]"
                 style={{ animationDelay: `${idx * 0.04}s` }}
               >
                 {/* Name */}
@@ -128,9 +127,6 @@ export default function ApiKeysPage() {
                   </div>
                   <span className="text-[14px] font-medium text-ink tracking-tight truncate">{key.name}</span>
                 </div>
-
-                {/* Key Prefix */}
-                <span className="font-mono text-[12px] text-muted tracking-wide truncate">{key.prefix}••••••••</span>
 
                 {/* Status */}
                 {isExpired(key) ? (

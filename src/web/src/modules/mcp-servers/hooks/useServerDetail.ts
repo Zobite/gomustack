@@ -148,17 +148,33 @@ export function useServerDetail() {
 
   // ── Regenerate API key ───────────────────────────────────────────────────
 
-  const handleRegenerateKey = async () => {
+  const handleRegenerateKey = () => {
     if (!id) return;
-    try {
-      const result = await client.mcpToolServers.regenerateKey(id);
-      setRevealedApiKey(result.apiKey);
-      setServer((prev) => (prev ? { ...prev, apiKeyPrefix: result.apiKeyPrefix } : prev));
-      message.success("API key regenerated");
-    } catch (err) {
-      if (err instanceof GomuStackError) message.error(err.message);
-      else message.error("Failed to regenerate API key");
+
+    const doRegenerate = async () => {
+      try {
+        const result = await client.mcpToolServers.regenerateKey(id);
+        setRevealedApiKey(result.apiKey);
+        setServer((prev) => (prev ? { ...prev, hasApiKey: result.hasApiKey } : prev));
+        message.success("API key regenerated — copy it now");
+      } catch (err) {
+        if (err instanceof GomuStackError) message.error(err.message);
+        else message.error("Failed to regenerate API key");
+      }
+    };
+
+    if (server?.hasApiKey) {
+      modal.confirm({
+        title: "Regenerate API Key",
+        content: "This will invalidate the current key. Agents using the old key will disconnect until you update them.",
+        okText: "Regenerate",
+        cancelText: "Cancel",
+        onOk: doRegenerate,
+      });
+      return;
     }
+
+    void doRegenerate();
   };
 
   // ── Revoke API key ──────────────────────────────────────────────────────
@@ -174,7 +190,7 @@ export function useServerDetail() {
       onOk: async () => {
         try {
           await client.mcpToolServers.revokeKey(id);
-          setServer((prev) => (prev ? { ...prev, apiKeyPrefix: null } : prev));
+          setServer((prev) => (prev ? { ...prev, hasApiKey: false } : prev));
           setRevealedApiKey(null);
           message.success("API key revoked");
         } catch (err) {

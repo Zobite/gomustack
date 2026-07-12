@@ -84,7 +84,7 @@ export async function changePasswordService(
   const newHash = await Bun.password.hash(newPassword);
   await db
     .update(users)
-    .set({ passwordHash: newHash, updatedAt: Math.floor(Date.now() / 1000) })
+    .set({ passwordHash: newHash, updatedAt: now() })
     .where(eq(users.id, userId));
 
   return { ok: true, reason: null };

@@ -19,7 +19,7 @@ export const apiKeys = sqliteTable("api_keys", {
   id: text("id").primaryKey(),           // key_xxxx
   name: text("name").notNull(),
   keyHash: text("key_hash").notNull().unique(),
-  prefix: text("prefix").notNull(),       // first 8 chars of raw key (ltk_xxxx)
+  prefix: text("prefix").notNull(),       // legacy column — no longer exposed in API
   userId: text("user_id").notNull(),
   permissions: text("permissions").notNull().default('["*"]'),  // JSON array
   lastUsedAt: int("last_used_at"),
@@ -154,8 +154,8 @@ export const mcpToolServers = sqliteTable("mcp_tool_servers", {
     .default("custom"),
   isActive: int("is_active").notNull().default(1),
   extendsBuiltin: text("extends_builtin").notNull().default("[]"),
-  apiKeyHash: text("api_key_hash"),          // SHA-256 hash of msk_xxx key
-  apiKeyPrefix: text("api_key_prefix"),      // first 8 chars (msk_xxxx) for display
+  apiKeyHash: text("api_key_hash"),          // SHA-256 hash of MCP server key
+  apiKeyPrefix: text("api_key_prefix"),      // legacy — hasApiKey is derived from apiKeyHash
   createdAt: int("created_at").notNull(),
   updatedAt: int("updated_at").notNull(),
 });

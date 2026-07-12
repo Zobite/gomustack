@@ -36,16 +36,94 @@ export async function verifyS3Auth(
   const params = new URLSearchParams(queryString);
   const algorithm = params.get("X-Amz-Algorithm");
   if (algorithm === "AWS4-HMAC-SHA256") {
-    const credential = params.get("X-Amz-Credential");
-    if (credential) {
-      const accessKey = credential.split("/")[0];
-      const secret = await getSecretKeyForAccess(accessKey);
-      if (secret) return { authenticated: true, accessKey };
-      return { authenticated: false, error: "InvalidAccessKeyId" };
-    }
+    return verifyQueryStringSignatureV4(method, path, queryString, headers);
   }
 
   return { authenticated: false, error: "MissingAuth" };
+}
+
+async function verifyQueryStringSignatureV4(
+  method: string,
+  path: string,
+  queryString: string,
+  headers: Record<string, string | string[] | undefined>,
+): Promise<S3AuthResult> {
+  const params = new URLSearchParams(queryString);
+  const credential = params.get("X-Amz-Credential");
+  const signedHeaders = params.get("X-Amz-SignedHeaders");
+  const clientSignature = params.get("X-Amz-Signature");
+  const amzDate = params.get("X-Amz-Date");
+  const expires = params.get("X-Amz-Expires");
+
+  if (!credential || !signedHeaders || !clientSignature || !amzDate) {
+    return { authenticated: false, error: "MalformedAuth" };
+  }
+
+  if (expires) {
+    const expiresSec = Number(expires);
+    if (!Number.isFinite(expiresSec) || expiresSec < 1) {
+      return { authenticated: false, error: "MalformedAuth" };
+    }
+    const year = Number(amzDate.slice(0, 4));
+    const month = Number(amzDate.slice(4, 6)) - 1;
+    const day = Number(amzDate.slice(6, 8));
+    const hour = Number(amzDate.slice(9, 11));
+    const min = Number(amzDate.slice(11, 13));
+    const sec = Number(amzDate.slice(13, 15));
+    const signedAt = Date.UTC(year, month, day, hour, min, sec);
+    if (!Number.isFinite(signedAt) || Date.now() > signedAt + expiresSec * 1000) {
+      return { authenticated: false, error: "ExpiredToken" };
+    }
+  }
+
+  const accessKey = credential.split("/")[0];
+  const credentialScope = credential.split("/").slice(1).join("/");
+  const secretKey = await getSecretKeyForAccess(accessKey);
+  if (!secretKey) {
+    return { authenticated: false, error: "InvalidAccessKeyId" };
+  }
+
+  const qParams = new URLSearchParams(queryString);
+  qParams.delete("X-Amz-Signature");
+  const sortedQs = [...qParams.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+    .join("&");
+
+  const signedHeadersList = signedHeaders.split(";");
+  const canonicalHeaders =
+    signedHeadersList
+      .map((h) => `${h}:${(getHeader(headers, h) ?? "").toString().trim()}`)
+      .join("\n") + "\n";
+
+  const canonicalRequest = [
+    method.toUpperCase(),
+    path || "/",
+    sortedQs,
+    canonicalHeaders,
+    signedHeadersList.join(";"),
+    "UNSIGNED-PAYLOAD",
+  ].join("\n");
+
+  const stringToSign = [
+    "AWS4-HMAC-SHA256",
+    amzDate,
+    credentialScope,
+    await sha256Hex(Buffer.from(canonicalRequest, "utf-8")),
+  ].join("\n");
+
+  const scopeParts = credentialScope.split("/");
+  const dateKey = await hmacSha256(Buffer.from(`AWS4${secretKey}`, "utf-8"), scopeParts[0]);
+  const regionKey = await hmacSha256(dateKey, scopeParts[1]);
+  const serviceKey = await hmacSha256(regionKey, scopeParts[2]);
+  const signingKey = await hmacSha256(serviceKey, "aws4_request");
+  const computedSig = await hmacSha256Hex(signingKey, stringToSign);
+
+  if (computedSig === clientSignature) {
+    return { authenticated: true, accessKey };
+  }
+
+  return { authenticated: false, error: "SignatureDoesNotMatch" };
 }
 
 async function verifySignatureV4(
